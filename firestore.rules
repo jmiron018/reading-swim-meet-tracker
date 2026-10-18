@@ -1,26 +1,33 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Final meet records. Anyone can read (for reporting); only the one
-    // scorekeeper account can write, and only well-formed records.
+    // Final meet records. Anyone can read (for reporting); only accounts on
+    // the scorekeeper list can write, and only well-formed records.
     match /meets/{meetId} {
       allow read: if true;
       allow create, update: if isScorekeeper() && validMeet(request.resource.data);
       allow delete: if isScorekeeper();
     }
 
+    // Scorekeeper list: one document per allowed account, with the account's
+    // UID as the document ID. Managed in the Firebase console only.
+    match /scorekeepers/{uid} {
+      allow read, write: if false;
+    }
+
     function isScorekeeper() {
       return request.auth != null
-        && request.auth.token.email == 'scorekeeper@reading-swim-meet-tracker.web.app';
+        && exists(/databases/$(database)/documents/scorekeepers/$(request.auth.uid));
     }
 
     function validMeet(d) {
-      return d.keys().hasAll(['date', 'opponent', 'us', 'them', 'races', 'submittedAt'])
+      return d.keys().hasAll(['date', 'opponent', 'us', 'them', 'races', 'submittedAt', 'submittedBy'])
         && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && d.opponent is string && d.opponent.size() > 0 && d.opponent.size() <= 60
         && d.us is int && d.them is int
         && d.races is list && d.races.size() == 12
-        && d.submittedAt == request.time;
+        && d.submittedAt == request.time
+        && d.submittedBy == request.auth.token.email;
     }
   }
 

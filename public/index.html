@@ -108,6 +108,7 @@ input:focus-visible{outline:3px solid #fff;outline-offset:1px}
     <p class="sum" id="sum"></p>
     <div class="f"><label for="opp">Opponent</label><input id="opp" maxlength="60" required></div>
     <div class="f"><label for="mdate">Meet date</label><input id="mdate" type="date" required></div>
+    <div class="f"><label for="em">Scorekeeper email</label><input id="em" type="email" autocomplete="username" autocapitalize="off" spellcheck="false" required></div>
     <div class="f"><label for="pwd">Password</label><input id="pwd" type="password" autocomplete="current-password" required></div>
     <p class="msg" id="msg" role="status"></p>
     <div class="row"><button class="cancel" type="button" id="cancel">Cancel</button><button class="go" type="submit" id="send">Submit</button></div>
@@ -222,9 +223,10 @@ input:focus-visible{outline:3px solid #fff;outline-offset:1px}
   });
   showName();
 
-  // Final submit. The password is a real Firebase sign-in for the one
-  // scorekeeper account; Firestore rules reject writes from anyone else.
+  // Final submit. Signs in with a real Firebase account; Firestore rules only
+  // accept records from accounts listed in the scorekeepers collection.
   var SCOREKEEPER="scorekeeper@reading-swim-meet-tracker.web.app";
+  var EMAIL_KEY="reading-swim-meet-scorekeeper";
   var SDK="https://www.gstatic.com/firebasejs/10.14.1/";
   var fbReady=null;
   function loadScript(src){
@@ -261,6 +263,8 @@ input:focus-visible{outline:3px solid #fff;outline-offset:1px}
   document.getElementById("openSubmit").addEventListener("click",function(){
     var mdate=document.getElementById("mdate");
     if(!mdate.value) mdate.value=today();
+    var em=document.getElementById("em");
+    if(!em.value){try{em.value=localStorage.getItem(EMAIL_KEY)||SCOREKEEPER}catch(e){em.value=SCOREKEEPER}}
     document.getElementById("pwd").value="";
     document.getElementById("sum").textContent="Reading "+tally.us+", Them "+tally.them+" · "+tally.done+" of "+TYPES.length+" races entered"+(who?" · from "+who+"'s scores":"");
     say(tally.done<TYPES.length?"Not every race is entered yet. Missing races will be saved as blank.":"");
@@ -273,8 +277,9 @@ input:focus-visible{outline:3px solid #fff;outline-offset:1px}
     e.preventDefault();
     var opp=document.getElementById("opp").value.trim();
     var date=document.getElementById("mdate").value;
+    var email=document.getElementById("em").value.trim();
     var pwd=document.getElementById("pwd").value;
-    if(!opp||!date||!pwd){say("Enter the opponent, date and password.","err");return}
+    if(!opp||!date||!email||!pwd){say("Enter the opponent, date, email and password.","err");return}
     var record={
       date:date,
       opponent:opp,
@@ -293,18 +298,20 @@ input:focus-visible{outline:3px solid #fff;outline-offset:1px}
     var id=date+"_"+(slug(opp)||"opponent");
     send.disabled=true; say("Submitting…");
     firebaseApp().then(function(){
-      return firebase.auth().signInWithEmailAndPassword(SCOREKEEPER,pwd);
-    }).then(function(){
+      return firebase.auth().signInWithEmailAndPassword(email,pwd);
+    }).then(function(cred){
+      record.submittedBy=cred.user.email;
       record.submittedAt=firebase.firestore.FieldValue.serverTimestamp();
       return firebase.firestore().collection("meets").doc(id).set(record);
     }).then(function(){
+      try{localStorage.setItem(EMAIL_KEY,email)}catch(e){}
       say("Saved: Reading "+record.us+", "+opp+" "+record.them+" on "+date+".","ok");
       send.disabled=false;
       return firebase.auth().signOut();
     }).catch(function(err){
       var c=err&&err.code||"";
-      say(/wrong-password|invalid-credential|invalid-login|user-not-found/.test(c)?"Wrong password.":
-          c==="permission-denied"?"This account isn't allowed to submit.":
+      say(/wrong-password|invalid-credential|invalid-login|user-not-found|invalid-email/.test(c)?"Wrong email or password.":
+          c==="permission-denied"?"That login isn't on the scorekeeper list.":
           "Couldn't submit: "+(err&&err.message||err),"err");
       send.disabled=false;
       if(window.firebase&&firebase.apps.length) firebase.auth().signOut().catch(function(){});
