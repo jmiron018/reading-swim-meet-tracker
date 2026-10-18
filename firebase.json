@@ -1,13 +1,30 @@
 {
+  "firestore": {
+    "rules": "firestore.rules"
+  },
   "hosting": {
     "public": "public",
-    "ignore": ["firebase.json", "**/.*"],
+    "ignore": [
+      "firebase.json",
+      "firestore.rules",
+      "**/.*"
+    ],
     "headers": [
       {
         "source": "index.html",
-        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
       }
     ],
-    "rewrites": [{ "source": "**", "destination": "/index.html" }]
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
   }
 }

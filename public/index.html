@@ -59,6 +59,26 @@ main{max-width:560px;margin:0 auto;padding:12px 16px 24px}
 .step:disabled,.chip:disabled{opacity:.35}
 .none{margin-left:auto;padding:0 14px}
 .reset{padding:0 16px;flex:none}
+.who{max-width:560px;margin:4px auto 0;text-align:center;font:700 1.1rem var(--display);letter-spacing:.06em;text-transform:uppercase}
+.who button{margin-left:6px;background:none;border:0;color:var(--on-red);font:600 .8rem var(--body);text-decoration:underline;text-transform:none;letter-spacing:0;padding:4px}
+.name{background:var(--card);border:2px solid var(--red);border-radius:10px;padding:12px;margin-bottom:12px}
+.name label,.dlg label{display:block;font-weight:600;margin-bottom:6px}
+.row{display:flex;gap:8px}
+input{flex:1;min-width:0;min-height:44px;border-radius:8px;border:2px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;padding:0 10px}
+input:focus-visible{outline:3px solid #fff;outline-offset:1px}
+.go{min-height:44px;border-radius:8px;border:2px solid var(--red);background:var(--red);color:var(--on-red);font:inherit;font-weight:600;padding:0 16px}
+.go:disabled{opacity:.5}
+.submit{width:100%;margin-top:6px}
+.dlg{width:min(520px,calc(100% - 32px));background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:16px}
+.dlg::backdrop{background:rgba(0,0,0,.7)}
+.dlg h2{margin:0 0 12px;font:700 1.3rem var(--display);text-transform:uppercase;letter-spacing:.04em}
+.dlg .f{margin-bottom:12px}
+.dlg .sum{color:var(--mute);margin:0 0 12px}
+.dlg .msg{min-height:1.4em;margin:0 0 10px}
+.dlg .err{color:#ff8a98}
+.dlg .ok{color:#7ee2a0}
+.dlg .row{justify-content:flex-end}
+.dlg .cancel{min-height:44px;border-radius:8px;border:2px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-weight:600;padding:0 16px}
 </style>
 </head>
 <body>
@@ -70,12 +90,29 @@ main{max-width:560px;margin:0 auto;padding:12px 16px 24px}
       <div><b id="them">0</b><span>Them</span></div>
     </div>
   </div>
+  <div class="who" id="who" hidden><span id="whoName"></span><button type="button" id="rename">change</button></div>
   <div class="chk" id="chk"></div>
 </header>
 <main>
+  <form class="name" id="nameForm" hidden>
+    <label for="nameIn">Who's scoring on this phone?</label>
+    <div class="row"><input id="nameIn" maxlength="40" autocomplete="given-name" placeholder="Your name" required><button class="go" type="submit">Save</button></div>
+  </form>
   <div class="tools"><span>Tap the places your team finished in. Use Scratches if a swimmer or relay didn't swim, or "None of ours" if no one from your team placed.</span><button class="reset" id="reset" type="button">Clear meet</button></div>
   <div id="races"></div>
+  <button class="go submit" id="openSubmit" type="button">Submit final results</button>
 </main>
+<dialog class="dlg" id="dlg">
+  <form id="subForm" novalidate>
+    <h2>Submit final results</h2>
+    <p class="sum" id="sum"></p>
+    <div class="f"><label for="opp">Opponent</label><input id="opp" maxlength="60" required></div>
+    <div class="f"><label for="mdate">Meet date</label><input id="mdate" type="date" required></div>
+    <div class="f"><label for="pwd">Password</label><input id="pwd" type="password" autocomplete="current-password" required></div>
+    <p class="msg" id="msg" role="status"></p>
+    <div class="row"><button class="cancel" type="button" id="cancel">Cancel</button><button class="go" type="submit" id="send">Submit</button></div>
+  </form>
+</dialog>
 <script>
 (function(){
   var TYPES=["R","I","I","I","I","I","I","R","I","I","R","D"];
@@ -93,6 +130,7 @@ main{max-width:560px;margin:0 auto;padding:12px 16px 24px}
     if(saved && saved.sel && saved.sel.length===TYPES.length){sel=saved.sel;sc=saved.sc;none=saved.none}
   }catch(e){}
   function save(){try{localStorage.setItem(KEY,JSON.stringify({sel:sel,sc:sc,none:none}))}catch(e){}}
+  var tally={us:0,them:0,done:0};
   function fld(i){return MAXF[TYPES[i]]-sc[i]}
   var wrap=document.getElementById("races");
 
@@ -123,6 +161,7 @@ main{max-width:560px;margin:0 auto;padding:12px 16px 24px}
     });
     document.getElementById("us").textContent=U;
     document.getElementById("them").textContent=T;
+    tally={us:U,them:T,done:done};
     var all=done===TYPES.length;
     document.getElementById("chk").textContent=
       done+" of "+TYPES.length+" races entered"+(all?(U+T===FULL?". Total "+FULL+".":". Total "+(U+T)+" ("+(FULL-U-T)+" unclaimed due to scratches)."):"");
@@ -161,6 +200,117 @@ main{max-width:560px;margin:0 auto;padding:12px 16px 24px}
     if(!confirm("Clear every race and start a new meet?")) return;
     sel=TYPES.map(function(){return []});sc=TYPES.map(function(){return 0});none=TYPES.map(function(){return false});render();
   });
+
+  // Who's scoring on this phone. Shown in the header so people comparing
+  // phones can tell whose numbers are whose. Stays on this device only.
+  var NAME_KEY="reading-swim-meet-name", who="";
+  try{who=localStorage.getItem(NAME_KEY)||""}catch(e){}
+  var nameForm=document.getElementById("nameForm"), nameIn=document.getElementById("nameIn");
+  function showName(){
+    document.getElementById("whoName").textContent=who?who+"'s scores":"";
+    document.getElementById("who").hidden=!who;
+    nameForm.hidden=!!who;
+  }
+  nameForm.addEventListener("submit",function(e){
+    e.preventDefault();
+    var v=nameIn.value.trim(); if(!v) return;
+    who=v; try{localStorage.setItem(NAME_KEY,who)}catch(e){}
+    showName();
+  });
+  document.getElementById("rename").addEventListener("click",function(){
+    who=""; nameIn.value=""; showName(); nameIn.focus();
+  });
+  showName();
+
+  // Final submit. The password is a real Firebase sign-in for the one
+  // scorekeeper account; Firestore rules reject writes from anyone else.
+  var SCOREKEEPER="scorekeeper@reading-swim-meet-tracker.web.app";
+  var SDK="https://www.gstatic.com/firebasejs/10.14.1/";
+  var fbReady=null;
+  function loadScript(src){
+    return new Promise(function(ok,bad){
+      var s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=function(){bad(new Error("Couldn't load "+src))};
+      document.head.appendChild(s);
+    });
+  }
+  function firebaseApp(){
+    if(!fbReady){
+      fbReady=(window.firebase?Promise.resolve():
+        loadScript(SDK+"firebase-app-compat.js").then(function(){
+          return Promise.all([loadScript(SDK+"firebase-auth-compat.js"),loadScript(SDK+"firebase-firestore-compat.js")]);
+        })).then(function(){
+          if(firebase.apps.length) return;
+          // Firebase Hosting serves this project's web config here.
+          return fetch("/__/firebase/init.json").then(function(r){
+            if(!r.ok) throw new Error("Firebase config not found");
+            return r.json();
+          }).then(function(cfg){firebase.initializeApp(cfg)});
+        });
+      fbReady.catch(function(){fbReady=null});
+    }
+    return fbReady;
+  }
+  function today(){
+    var d=new Date();
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  }
+  function slug(s){return s.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")}
+
+  var dlg=document.getElementById("dlg"), msg=document.getElementById("msg"), send=document.getElementById("send");
+  function say(text,cls){msg.textContent=text;msg.className="msg"+(cls?" "+cls:"")}
+  document.getElementById("openSubmit").addEventListener("click",function(){
+    var mdate=document.getElementById("mdate");
+    if(!mdate.value) mdate.value=today();
+    document.getElementById("pwd").value="";
+    document.getElementById("sum").textContent="Reading "+tally.us+", Them "+tally.them+" · "+tally.done+" of "+TYPES.length+" races entered"+(who?" · from "+who+"'s scores":"");
+    say(tally.done<TYPES.length?"Not every race is entered yet. Missing races will be saved as blank.":"");
+    send.disabled=false;
+    dlg.showModal();
+  });
+  document.getElementById("cancel").addEventListener("click",function(){dlg.close()});
+
+  document.getElementById("subForm").addEventListener("submit",function(e){
+    e.preventDefault();
+    var opp=document.getElementById("opp").value.trim();
+    var date=document.getElementById("mdate").value;
+    var pwd=document.getElementById("pwd").value;
+    if(!opp||!date||!pwd){say("Enter the opponent, date and password.","err");return}
+    var record={
+      date:date,
+      opponent:opp,
+      us:tally.us,
+      them:tally.them,
+      racesEntered:tally.done,
+      scoredBy:who||"",
+      races:TYPES.map(function(t,i){
+        var r=pts(i);
+        return {race:i+1,event:NAMES[i],type:t==="R"?"relay":t==="D"?"diving":"individual",
+          places:sel[i].slice().sort(function(a,b){return a-b}),scratches:sc[i],noneOfOurs:none[i],
+          entered:!!r,us:r?r.us:0,them:r?r.them:0};
+      })
+    };
+    // One record per meet: re-submitting the same date + opponent replaces it.
+    var id=date+"_"+(slug(opp)||"opponent");
+    send.disabled=true; say("Submitting…");
+    firebaseApp().then(function(){
+      return firebase.auth().signInWithEmailAndPassword(SCOREKEEPER,pwd);
+    }).then(function(){
+      record.submittedAt=firebase.firestore.FieldValue.serverTimestamp();
+      return firebase.firestore().collection("meets").doc(id).set(record);
+    }).then(function(){
+      say("Saved: Reading "+record.us+", "+opp+" "+record.them+" on "+date+".","ok");
+      send.disabled=false;
+      return firebase.auth().signOut();
+    }).catch(function(err){
+      var c=err&&err.code||"";
+      say(/wrong-password|invalid-credential|invalid-login|user-not-found/.test(c)?"Wrong password.":
+          c==="permission-denied"?"This account isn't allowed to submit.":
+          "Couldn't submit: "+(err&&err.message||err),"err");
+      send.disabled=false;
+      if(window.firebase&&firebase.apps.length) firebase.auth().signOut().catch(function(){});
+    });
+  });
+
   render();
 })();
 </script>

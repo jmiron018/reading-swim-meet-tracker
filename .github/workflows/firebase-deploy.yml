@@ -28,3 +28,14 @@ jobs:
             echo "::error::Live site returned $STATUS — deploy may have failed."
             exit 1
           fi
+
+      # action-hosting-deploy ships Hosting only. Deploy the Firestore rules
+      # too, so the rules guarding final meet records always match the repo.
+      # Needs the deploy service account to have the Firebase Rules Admin role.
+      - name: Deploy Firestore Rules (live)
+        env:
+          FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_READING_SWIM_MEET_TRACKER }}
+        run: |
+          printf '%s' "$FIREBASE_SA" > "$RUNNER_TEMP/gcp-sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/gcp-sa.json"
+          npx --yes firebase-tools deploy --only firestore:rules --project reading-swim-meet-tracker --non-interactive --force
