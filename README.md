@@ -19,6 +19,6 @@ A **Results** tab (open to everyone) reads `meets` and shows the season record (
 
 ## Final results
 
-Each phone keeps its own scores (saved on that device only), labeled with the scorer's name. **Submit final results** asks for the opponent, meet date and the scorekeeper password, then saves that phone's sheet to Firestore at `meets/{date}_{opponent}`. Re-submitting the same date + opponent replaces the record.
+Each phone keeps its own scores (saved on that device only), labeled with the scorer's name. **Submit final results** asks for the opponent, meet date and the scorekeeper password, then saves that phone's sheet to Firestore at `meets/{date}_{opponent}`. Re-submitting the same date + opponent replaces the record. After a successful submit the form closes and that phone's sheet is cleared for the next meet.
 
 Sign-in is a Firebase Auth email/password account. `firestore.rules` only accepts records from accounts listed in the `Scorekeepers` collection (capital S) (document ID = the account's lowercase email, or its UID; added in the Firebase console), and stamps each record with `submittedBy`. Rules deploy with every push (the deploy service account needs the **Firebase Rules Admin** role).
