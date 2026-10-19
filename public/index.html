@@ -32,6 +32,7 @@ img{max-width:100%}
   box-sizing:border-box;
 }
 *,*::before,*::after{box-sizing:inherit}
+[hidden]{display:none!important}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 var(--body)}
 header{position:sticky;top:env(safe-area-inset-top,0px);z-index:2;background:var(--red);color:var(--on-red);padding:10px 16px;border-bottom:4px solid #000}
@@ -105,9 +106,7 @@ th:first-child,td:first-child{text-align:left}
 th{color:var(--mute);font-weight:600}
 td.lead{color:#ff8a98;font-weight:600}
 .note{color:var(--mute);font-size:.85rem}
-.saved{display:flex;align-items:center;gap:10px;background:#123821;border:2px solid #2f8f55;color:#d6f5e0;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-weight:600}
-.saved span{flex:1;min-width:0}
-.saved button{flex:none;min-height:36px;border-radius:8px;border:2px solid #2f8f55;background:transparent;color:inherit;font:inherit;padding:0 12px}
+.saved{background:#123821;border:2px solid #2f8f55;color:#d6f5e0;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-weight:600}
 .dlg .cancel{min-height:44px;border-radius:8px;border:2px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-weight:600;padding:0 16px}
 </style>
 </head>
@@ -131,7 +130,7 @@ td.lead{color:#ff8a98;font-weight:600}
     <div class="row"><input id="nameIn" maxlength="40" autocomplete="given-name" placeholder="Your name" required><button class="go" type="submit">Save</button></div>
   </form>
   <div class="tools"><span>Tap the places your team finished in. Use Scratches if a swimmer or relay didn't swim, or "None of ours" if no one from your team placed.</span><button class="reset" id="reset" type="button">Clear meet</button></div>
-  <div class="saved" id="saved" role="status" hidden><span id="savedMsg"></span><button type="button" id="savedOk">OK</button></div>
+  <div class="saved" id="saved" role="status" hidden></div>
   <div id="races"></div>
   <button class="go submit" id="openSubmit" type="button">Submit final results</button>
 </div>
@@ -313,7 +312,11 @@ td.lead{color:#ff8a98;font-weight:600}
     dlg.showModal();
   });
   document.getElementById("cancel").addEventListener("click",function(){dlg.close()});
-  document.getElementById("savedOk").addEventListener("click",function(){document.getElementById("saved").hidden=true});
+  // "Saved" banner: goes away on its own, or as soon as the next meet's scoring starts.
+  var savedBox=document.getElementById("saved"), savedTimer=0;
+  function hideSaved(){savedBox.hidden=true; clearTimeout(savedTimer)}
+  function showSaved(text){savedBox.textContent=text; savedBox.hidden=false; clearTimeout(savedTimer); savedTimer=setTimeout(hideSaved,6000)}
+  wrap.addEventListener("click",hideSaved);
 
   document.getElementById("subForm").addEventListener("submit",function(e){
     e.preventDefault();
@@ -355,8 +358,7 @@ td.lead{color:#ff8a98;font-weight:600}
       clearMeet();
       document.getElementById("opp").value="";
       document.getElementById("mdate").value="";
-      document.getElementById("savedMsg").textContent="Saved: Reading "+record.us+", "+opp+" "+record.them+" on "+fmtDate(date)+". Scores cleared for the next meet.";
-      document.getElementById("saved").hidden=false;
+      showSaved("Saved: Reading "+record.us+", "+opp+" "+record.them+" on "+fmtDate(date)+". Scores cleared for the next meet.");
       window.scrollTo(0,0);
     }).catch(function(err){
       var c=err&&err.code||"";
