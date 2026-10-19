@@ -12,14 +12,14 @@ service cloud.firestore {
     // Scorekeeper list: one document per allowed account, with the account's
     // email (lowercase) or UID as the document ID. Managed in the Firebase
     // console only.
-    match /scorekeepers/{id} {
+    match /Scorekeepers/{id} {
       allow read, write: if false;
     }
 
     function isScorekeeper() {
       return request.auth != null
-        && (exists(/databases/$(database)/documents/scorekeepers/$(request.auth.token.email))
-          || exists(/databases/$(database)/documents/scorekeepers/$(request.auth.uid)));
+        && (exists(/databases/$(database)/documents/Scorekeepers/$(request.auth.token.email))
+          || exists(/databases/$(database)/documents/Scorekeepers/$(request.auth.uid)));
     }
 
     function validMeet(d) {
