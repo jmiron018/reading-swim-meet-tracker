@@ -78,6 +78,33 @@ input:focus-visible{outline:3px solid #fff;outline-offset:1px}
 .dlg .err{color:#ff8a98}
 .dlg .ok{color:#7ee2a0}
 .dlg .row{justify-content:flex-end}
+.tabs{display:flex;max-width:560px;margin:8px auto 0;gap:6px}
+.tabs button{flex:1;min-height:40px;border:2px solid #000;border-radius:8px;background:var(--red-deep);color:var(--on-red);font:700 1rem var(--display);letter-spacing:.08em;text-transform:uppercase}
+.tabs button[aria-selected="true"]{background:#000}
+.tabs button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+.rhead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:4px 0 12px}
+.rhead select{min-height:44px;border-radius:8px;border:2px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;padding:0 8px}
+.rec{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center}
+.stat b{display:block;font:700 2rem/1.1 var(--display);font-variant-numeric:tabular-nums}
+.stat span{color:var(--mute);font-size:.85rem}
+.rsec{font:700 1.15rem var(--display);letter-spacing:.06em;text-transform:uppercase;margin:18px 0 8px}
+.meet{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:8px}
+.meet>button{width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;background:none;border:0;color:var(--ink);font:inherit;text-align:left;min-height:56px}
+.meet>button:focus-visible{outline:3px solid #fff;outline-offset:-3px;border-radius:10px}
+.wl{flex:none;width:30px;height:30px;border-radius:6px;display:grid;place-items:center;font:700 1rem var(--display);background:var(--line)}
+.wl.W{background:var(--red);color:var(--on-red)}
+.mtxt{flex:1;min-width:0}
+.mtxt b{display:block}
+.mtxt span{color:var(--mute);font-size:.85rem}
+.msc{flex:none;font:700 1.3rem var(--display);font-variant-numeric:tabular-nums}
+.mdet{padding:0 12px 12px}
+table{width:100%;border-collapse:collapse;font-size:.9rem;font-variant-numeric:tabular-nums}
+th,td{padding:6px 4px;border-top:1px solid var(--line);text-align:right}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--mute);font-weight:600}
+td.lead{color:#ff8a98;font-weight:600}
+.note{color:var(--mute);font-size:.85rem}
 .dlg .cancel{min-height:44px;border-radius:8px;border:2px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-weight:600;padding:0 16px}
 </style>
 </head>
@@ -92,8 +119,10 @@ input:focus-visible{outline:3px solid #fff;outline-offset:1px}
   </div>
   <div class="who" id="who" hidden><span id="whoName"></span><button type="button" id="rename">change</button></div>
   <div class="chk" id="chk"></div>
+  <nav class="tabs" role="tablist"><button type="button" role="tab" id="tabScore" aria-selected="true" aria-controls="scoreView">Score</button><button type="button" role="tab" id="tabResults" aria-selected="false" aria-controls="resultsView">Results</button></nav>
 </header>
 <main>
+<div id="scoreView" role="tabpanel" aria-labelledby="tabScore">
   <form class="name" id="nameForm" hidden>
     <label for="nameIn">Who's scoring on this phone?</label>
     <div class="row"><input id="nameIn" maxlength="40" autocomplete="given-name" placeholder="Your name" required><button class="go" type="submit">Save</button></div>
@@ -101,6 +130,11 @@ input:focus-visible{outline:3px solid #fff;outline-offset:1px}
   <div class="tools"><span>Tap the places your team finished in. Use Scratches if a swimmer or relay didn't swim, or "None of ours" if no one from your team placed.</span><button class="reset" id="reset" type="button">Clear meet</button></div>
   <div id="races"></div>
   <button class="go submit" id="openSubmit" type="button">Submit final results</button>
+</div>
+<section id="resultsView" role="tabpanel" aria-labelledby="tabResults" hidden>
+  <div class="rhead"><span class="note" id="rstatus">Loading results…</span><select id="season" aria-label="Season" hidden></select></div>
+  <div id="rbody"></div>
+</section>
 </main>
 <dialog class="dlg" id="dlg">
   <form id="subForm" novalidate>
@@ -317,6 +351,111 @@ input:focus-visible{outline:3px solid #fff;outline-offset:1px}
       if(window.firebase&&firebase.apps.length) firebase.auth().signOut().catch(function(){});
     });
   });
+
+  // Results tab: season record, meet list with race detail, event trends.
+  // Reads the submitted meets; anyone can view.
+  var tabScore=document.getElementById("tabScore"), tabResults=document.getElementById("tabResults");
+  var scoreView=document.getElementById("scoreView"), resultsView=document.getElementById("resultsView");
+  var rstatus=document.getElementById("rstatus"), rbody=document.getElementById("rbody"), seasonSel=document.getElementById("season");
+  var meets=[];
+  function showTab(results){
+    tabScore.setAttribute("aria-selected",results?"false":"true");
+    tabResults.setAttribute("aria-selected",results?"true":"false");
+    scoreView.hidden=results; resultsView.hidden=!results;
+    if(results) loadResults();
+  }
+  tabScore.addEventListener("click",function(){showTab(false)});
+  tabResults.addEventListener("click",function(){showTab(true)});
+
+  // Swim seasons run Aug–Jul, so a Jan meet belongs to the season that started the previous fall.
+  function seasonOf(date){var y=+date.slice(0,4), m=+date.slice(5,7); var s=m>=8?y:y-1; return s+"–"+String(s+1).slice(2)}
+  function fmtDate(date){var d=new Date(date+"T12:00:00"); return d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}
+  function el(tag,cls,text){var e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e}
+  function result(m){return m.us>m.them?"W":m.us<m.them?"L":"T"}
+
+  function loadResults(){
+    rstatus.textContent="Loading results…";
+    firebaseApp().then(function(){
+      return firebase.firestore().collection("meets").orderBy("date","desc").get();
+    }).then(function(snap){
+      meets=snap.docs.map(function(d){return d.data()});
+      var seasons=[];
+      meets.forEach(function(m){var s=seasonOf(m.date); if(seasons.indexOf(s)<0) seasons.push(s)});
+      var keep=seasonSel.value;
+      seasonSel.innerHTML="";
+      seasons.forEach(function(s){seasonSel.appendChild(el("option",null,s+" season")).value=s});
+      if(keep && seasons.indexOf(keep)>-1) seasonSel.value=keep;
+      seasonSel.hidden=seasons.length<2;
+      drawResults();
+    }).catch(function(err){
+      rstatus.textContent="Couldn't load results. Check your connection and tap Results again.";
+      rbody.innerHTML="";
+    });
+  }
+  seasonSel.addEventListener("change",drawResults);
+
+  function drawResults(){
+    rbody.innerHTML="";
+    var season=seasonSel.value;
+    var list=meets.filter(function(m){return !season||seasonOf(m.date)===season});
+    if(!list.length){rstatus.textContent="No results submitted yet.";return}
+    rstatus.textContent=(seasonSel.hidden&&season?season+" season · ":"")+list.length+" meet"+(list.length===1?"":"s");
+
+    // Season record
+    var w=0,l=0,t=0,pf=0,pa=0;
+    list.forEach(function(m){var r=result(m); r==="W"?w++:r==="L"?l++:t++; pf+=m.us; pa+=m.them});
+    var rec=el("div","rec");
+    [[w+"–"+l+(t?"–"+t:""),"Record"+(t?" (W–L–T)":" (W–L)")],[pf,"Points for"],[pa,"Points against"]].forEach(function(x){
+      var s=el("div","stat"); s.appendChild(el("b",null,x[0])); s.appendChild(el("span",null,x[1])); rec.appendChild(s);
+    });
+    rbody.appendChild(rec);
+
+    // Meets, newest first; tap one for its race-by-race breakdown
+    rbody.appendChild(el("h2","rsec","Meets"));
+    list.forEach(function(m){
+      var card=el("div","meet"), btn=el("button"), r=result(m);
+      btn.type="button"; btn.setAttribute("aria-expanded","false");
+      btn.appendChild(el("span","wl "+r,r));
+      var tx=el("span","mtxt"); tx.appendChild(el("b",null,"vs "+m.opponent));
+      tx.appendChild(el("span",null,fmtDate(m.date)+(m.racesEntered<NAMES.length?" · "+m.racesEntered+" of "+NAMES.length+" races":"")));
+      btn.appendChild(tx);
+      btn.appendChild(el("span","msc",m.us+"–"+m.them));
+      var det=el("div","mdet"); det.hidden=true;
+      var tb=el("table"), hr=el("tr");
+      ["Race","Places","Reading",m.opponent].forEach(function(h){hr.appendChild(el("th",null,h))});
+      tb.appendChild(hr);
+      (m.races||[]).forEach(function(x){
+        var tr=el("tr");
+        tr.appendChild(el("td",null,x.race+". "+x.event));
+        tr.appendChild(el("td",null,!x.entered?"—":x.noneOfOurs?"none":x.places.map(function(p){return p+(p===1?"st":p===2?"nd":p===3?"rd":"th")}).join(", ")+(x.scratches?" ("+x.scratches+" scr)":"")));
+        tr.appendChild(el("td",x.entered&&x.us>x.them?"lead":"",x.entered?x.us:"—"));
+        tr.appendChild(el("td",null,x.entered?x.them:"—"));
+        tb.appendChild(tr);
+      });
+      det.appendChild(tb);
+      if(m.scoredBy) det.appendChild(el("p","note","Scored by "+m.scoredBy+"."));
+      btn.addEventListener("click",function(){det.hidden=!det.hidden; btn.setAttribute("aria-expanded",det.hidden?"false":"true")});
+      card.appendChild(btn); card.appendChild(det); rbody.appendChild(card);
+    });
+
+    // Event trends: average points per meet in each event, entered races only
+    rbody.appendChild(el("h2","rsec","By event"));
+    var tb=el("table"), hr=el("tr");
+    ["Event","Avg Reading","Avg opp.","Meets"].forEach(function(h){hr.appendChild(el("th",null,h))});
+    tb.appendChild(hr);
+    NAMES.forEach(function(name,i){
+      var n=0,u=0,o=0;
+      list.forEach(function(m){var x=(m.races||[])[i]; if(x&&x.entered){n++;u+=x.us;o+=x.them}});
+      var tr=el("tr");
+      tr.appendChild(el("td",null,(i+1)+". "+name));
+      tr.appendChild(el("td",n&&u>o?"lead":"",n?(u/n).toFixed(1):"—"));
+      tr.appendChild(el("td",null,n?(o/n).toFixed(1):"—"));
+      tr.appendChild(el("td",null,n));
+      tb.appendChild(tr);
+    });
+    rbody.appendChild(tb);
+    rbody.appendChild(el("p","note","Averages count only meets where that race was entered. Highlighted: Reading outscored the opponent."));
+  }
 
   render();
 })();
