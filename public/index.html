@@ -50,21 +50,25 @@ main{max-width:560px;margin:0 auto;padding:12px 16px 24px}
 .race h2{margin:0 0 8px;font:700 1.15rem var(--display);letter-spacing:.04em;text-transform:uppercase;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .race h2 small{font:400 .85rem var(--body);letter-spacing:0;text-transform:none;color:var(--mute);text-align:right}
 .chips{display:flex;gap:8px;flex-wrap:wrap}
-.chip,.step,.none,.reset,.whole{min-height:44px;border-radius:8px;border:2px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-weight:600}
+.chip,.step,.none,.reset,.whole,.tiebtn,.tl{min-height:44px;border-radius:8px;border:2px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-weight:600}
 .chip{flex:1 1 0;min-width:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0;line-height:1.1}
 .chip .t{font-size:.7rem;min-height:.8rem}
+.chip[data-tie="1"]{border-color:#fff}
 .chip[data-s="1"]{background:var(--red);border-color:var(--red);color:var(--on-red)}
-.chip[data-s="2"]{background:linear-gradient(90deg,var(--red) 50%,#26262b 50%);border-color:var(--red);color:var(--on-red)}
 .chip[data-s="3"]{background:#000;border-style:dashed;border-color:var(--mute);color:var(--mute)}
 .chip[data-s="3"] .o{text-decoration:line-through}
-.none[aria-pressed="true"],.whole[aria-pressed="true"]{background:var(--red);border-color:var(--red);color:var(--on-red)}
-.chip:focus-visible,.reset:focus-visible,.step:focus-visible,.none:focus-visible,.whole:focus-visible{outline:3px solid #fff;outline-offset:2px}
+.none[aria-pressed="true"],.whole[aria-pressed="true"],.tiebtn[aria-pressed="true"],.tl[aria-pressed="true"]{background:var(--red);border-color:var(--red);color:var(--on-red)}
+.chip:focus-visible,.reset:focus-visible,.step:focus-visible,.none:focus-visible,.whole:focus-visible,.tiebtn:focus-visible,.tl:focus-visible{outline:3px solid #fff;outline-offset:2px}
 .scr{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:8px;color:var(--mute);font-size:.9rem}
 .scr b{min-width:1.5ch;text-align:center;color:var(--ink);font-size:1rem}
 .step{min-width:44px;font-size:1.2rem}
-.step:disabled,.chip:disabled,.none:disabled{opacity:.35}
+.step:disabled,.chip:disabled,.none:disabled,.tiebtn:disabled,.tl:disabled{opacity:.35}
+.tiebtn{margin-left:auto;padding:0 14px}
+.tiebtn+.none{margin-left:0}
+.ties{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;color:var(--mute);font-size:.9rem}
+.tl{min-width:52px;padding:0 8px}
 .whole{width:100%;margin-top:8px;padding:0 14px}
-.race.off .chips,.race.off .scr{opacity:.4}
+.race.off .chips,.race.off .scr,.race.off .ties{opacity:.4}
 .none{margin-left:auto;padding:0 14px}
 .reset{padding:0 16px;flex:none}
 .who{max-width:560px;margin:4px auto 0;text-align:center;font:700 1.1rem var(--display);letter-spacing:.06em;text-transform:uppercase}
@@ -138,7 +142,7 @@ td.lead{color:#ff8a98;font-weight:600}
     <label for="nameIn">Who's scoring on this phone?</label>
     <div class="row"><input id="nameIn" maxlength="40" autocomplete="given-name" placeholder="Your name" required><button class="go" type="submit">Save</button></div>
   </form>
-  <div class="tools"><span>Tap a place once for Reading, again for a tie (½: that place's points are split in half between the teams), again for a DQ, again to clear. After a DQ, everyone below moves up. Use Scratches if a swimmer or relay didn't swim, "None of ours" if no one from Reading placed, or "Scratch entire race" if the race wasn't held.</span><button class="reset" id="reset" type="button">Clear meet</button></div>
+  <div class="tools"><span>Tap a place once for Reading, again for a DQ (everyone below moves up), again to clear. Tap Tie on a race to mark tied places: tied swimmers share the points for the places they take up. Use Scratches if a swimmer or relay didn't swim, "None of ours" if no one from Reading placed, or "Scratch entire race" if the race wasn't held.</span><button class="reset" id="reset" type="button">Clear meet</button></div>
   <div class="saved" id="saved" role="status" hidden></div>
   <div id="races"></div>
   <button class="go submit" id="openSubmit" type="button">Submit final results</button>
@@ -168,71 +172,112 @@ td.lead{color:#ff8a98;font-weight:600}
   var TABS={R:REL,I:IND,D:DIVE};
   var MAXF={R:3,I:6,D:3};
   var FULL=TYPES.reduce(function(a,t){return a+(t==="R"?14:t==="D"?13:16)},0);
-  /* place states: 0 Them, 1 Reading, 2 tie (half to Reading), 3 DQ (place removed, others move up) */
-  var TAG=["","","½","DQ"];
-  var STATE_NAME=["Them","Reading","Tie, half to Reading","Disqualified"];
-  var KEY="reading-swim-meet-v2", OLD_KEY="reading-swim-meet-v1";
-  var st,sc,none,off;
+  /* chip states: 0 Them, 1 Reading, 3 DQ (place removed, everyone below moves up).
+     Tie links join neighbouring positions: the points for all the places the tied swimmers
+     use up (for example 2nd and 3rd) are added together and split equally between them. */
+  var STATE_NAME={0:"Them",1:"Reading",3:"Disqualified"};
+  var KEY="reading-swim-meet-v3", OLD_KEYS=["reading-swim-meet-v2","reading-swim-meet-v1"];
+  var st,tl,sc,none,off,open;
   function fresh(){
     st=TYPES.map(function(t){var a=[];for(var p=0;p<MAXF[t];p++)a.push(0);return a});
+    tl=TYPES.map(function(t){var a=[];for(var p=1;p<MAXF[t];p++)a.push(false);return a});
     sc=TYPES.map(function(){return 0});
     none=TYPES.map(function(){return false});
     off=TYPES.map(function(){return false});
+    open=TYPES.map(function(){return false});
   }
   fresh();
   // Restore the meet in progress so a refresh or locked phone doesn't wipe it.
-  // A sheet saved by the old version (Reading places only) carries over.
+  // A sheet saved by an older version carries over. There a ½ place meant a
+  // Reading swimmer tied with an opponent, so it becomes Reading at that place
+  // tied with the next place (the opponent's); a ½ pair counts as one such tie.
   try{
     var saved=JSON.parse(localStorage.getItem(KEY)||"null");
-    if(saved && saved.st && saved.st.length===TYPES.length){st=saved.st;sc=saved.sc;none=saved.none;off=saved.off}
+    if(saved && saved.st && saved.st.length===TYPES.length){st=saved.st;tl=saved.tl;sc=saved.sc;none=saved.none;off=saved.off}
     else{
-      var old=JSON.parse(localStorage.getItem(OLD_KEY)||"null");
-      if(old && old.sel && old.sel.length===TYPES.length){
-        old.sel.forEach(function(ps,i){ps.forEach(function(p){if(p>=1&&p<=MAXF[TYPES[i]]) st[i][p-1]=1})});
-        sc=old.sc;none=old.none;
+      var v2=JSON.parse(localStorage.getItem(OLD_KEYS[0])||"null"), v1=JSON.parse(localStorage.getItem(OLD_KEYS[1])||"null");
+      if(v2 && v2.st && v2.st.length===TYPES.length){
+        v2.st.forEach(function(row,i){
+          for(var p=0;p<row.length;p++){
+            var v=row[p];
+            if(v!==2){st[i][p]=v;continue}
+            st[i][p]=1;
+            if(p+1<row.length){tl[i][p]=true; if(row[p+1]===2){st[i][p+1]=0;p++}}
+          }
+        });
+        sc=v2.sc;none=v2.none;off=v2.off;
+      }else if(v1 && v1.sel && v1.sel.length===TYPES.length){
+        v1.sel.forEach(function(ps,i){ps.forEach(function(p){if(p>=1&&p<=MAXF[TYPES[i]]) st[i][p-1]=1})});
+        sc=v1.sc;none=v1.none;
       }
     }
   }catch(e){fresh()}
-  function save(){try{localStorage.setItem(KEY,JSON.stringify({st:st,sc:sc,none:none,off:off}));localStorage.removeItem(OLD_KEY)}catch(e){}}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify({st:st,tl:tl,sc:sc,none:none,off:off}));OLD_KEYS.forEach(function(k){localStorage.removeItem(k)})}catch(e){}}
   var tally={us:0,them:0,done:0};
   var wrap=document.getElementById("races");
-  function fmt(n){return n%1===0?String(n):n.toFixed(1)}
+  function fmt(n){return String(Math.round(n*100)/100)}
   function fld(i){return MAXF[TYPES[i]]-sc[i]}
   function ord(p){return p+(p===1?"st":p===2?"nd":p===3?"rd":"th")}
+  function anyTie(i){return tl[i].some(function(x){return x})}
+
+  /* active swimmers (positions that are not DQ'd), grouped into ties */
+  function groups(i){
+    var f=fld(i), A=[], g=[], k, m;
+    for(var p=1;p<=f;p++) if(st[i][p-1]!==3) A.push(p);
+    for(k=0;k<A.length;){
+      m=1;
+      while(k+m<A.length && A[k+m]-A[k+m-1]===1 && tl[i][A[k+m-1]-1]) m++;
+      g.push(A.slice(k,k+m));
+      k+=m;
+    }
+    return g;
+  }
 
   function pts(i){
     if(off[i]) return {us:0,them:0};
-    var tab=TABS[TYPES[i]], s=st[i], f=fld(i), mine=false, rank=0, tot=0, us=0;
-    for(var p=1;p<=f;p++){
-      var v=s[p-1];
-      if(v===1||v===2) mine=true;
-      if(v===3) continue;
-      rank++;
-      var w=tab[rank-1]||0;
-      tot+=w;
-      if(v===1) us+=w; else if(v===2) us+=w/2;
-    }
+    var tab=TABS[TYPES[i]], f=fld(i), mine=false, place=1, tot=0, us=0;
+    for(var p=1;p<=f;p++) if(st[i][p-1]===1) mine=true;
     if(!mine&&!none[i]) return null;
+    groups(i).forEach(function(grp){
+      var pool=0;
+      for(var j=0;j<grp.length;j++) pool+=(tab[place-1+j]||0);
+      var w=pool/grp.length;
+      grp.forEach(function(p){tot+=w; if(st[i][p-1]===1) us+=w});
+      place+=grp.length;
+    });
     return {us:us,them:tot-us};
   }
 
   function render(){
     var U=0,T=0,done=0;
     TYPES.forEach(function(t,i){
-      var card=wrap.children[i], r=pts(i), f=fld(i);
+      var card=wrap.children[i], r=pts(i), f=fld(i), tied={};
       var out=card.querySelector("small");
       if(off[i]) out.textContent="Scratched, 0 points";
       else if(r) out.textContent="Reading "+fmt(r.us)+", Them "+fmt(r.them);
       else out.textContent="";
       if(r){U+=r.us;T+=r.them;done++}
       card.classList.toggle("off",off[i]);
+      groups(i).forEach(function(g){ if(g.length>1) g.forEach(function(p){tied[p]=true}); });
       card.querySelectorAll(".chip").forEach(function(b){
         var p=+b.dataset.p, v=st[i][p-1];
         b.dataset.s=v;
-        b.setAttribute("aria-pressed",v===1||v===2?"true":"false");
-        b.setAttribute("aria-label",ord(p)+" place: "+STATE_NAME[v]);
-        b.querySelector(".t").textContent=TAG[v];
+        b.dataset.tie=tied[p]?"1":"0";
+        b.setAttribute("aria-pressed",v===1?"true":"false");
+        b.setAttribute("aria-label",ord(p)+" place: "+STATE_NAME[v]+(tied[p]?", tied":""));
+        b.querySelector(".t").textContent=v===3?"DQ":(tied[p]?"tie":"");
         b.disabled=off[i]||p>f;
+      });
+      var shown=open[i]||anyTie(i);
+      var tb=card.querySelector(".tiebtn");
+      tb.setAttribute("aria-pressed",shown?"true":"false");
+      tb.setAttribute("aria-expanded",shown?"true":"false");
+      tb.disabled=off[i];
+      card.querySelector(".ties").hidden=!shown;
+      card.querySelectorAll(".tl").forEach(function(b){
+        var p=+b.dataset.l;
+        b.setAttribute("aria-pressed",tl[i][p-1]?"true":"false");
+        b.disabled=off[i]||p+1>f;
       });
       card.querySelector(".none").setAttribute("aria-pressed",none[i]?"true":"false");
       card.querySelector(".none").disabled=off[i];
@@ -247,23 +292,31 @@ td.lead{color:#ff8a98;font-weight:600}
     tally={us:U,them:T,done:done};
     var all=done===TYPES.length;
     document.getElementById("chk").textContent=
-      done+" of "+TYPES.length+" races entered"+(all?(U+T===FULL?". Total "+FULL+".":". Total "+fmt(U+T)+" ("+fmt(FULL-U-T)+" unclaimed from scratches or DQs)."):"");
+      done+" of "+TYPES.length+" races entered"+(all?(fmt(U+T)===String(FULL)?". Total "+FULL+".":". Total "+fmt(U+T)+" ("+fmt(FULL-U-T)+" below "+FULL+" because of scratches or DQs)."):"");
     save();
   }
 
   TYPES.forEach(function(t,i){
     var card=document.createElement("section");
     card.className="race"+(t==="R"?" relay":"");
-    var n=MAXF[t], html="";
-    for(var p=1;p<=n;p++) html+='<button type="button" class="chip" data-p="'+p+'" data-s="0" aria-pressed="false"><span class="o">'+ord(p)+'</span><span class="t"></span></button>';
-    card.innerHTML='<h2><span>Race '+(i+1)+": "+NAMES[i]+'</span><small></small></h2><div class="chips">'+html+'</div><div class="scr"><span>Scratches</span><button type="button" class="step" data-d="-1" aria-label="Fewer scratches">−</button><b class="cnt">0</b><button type="button" class="step" data-d="1" aria-label="More scratches">+</button><button type="button" class="none" aria-pressed="false">None of ours</button></div>'+'<button type="button" class="whole" aria-pressed="false">Scratch entire race</button>';
+    var n=MAXF[t], html="", links="";
+    for(var p=1;p<=n;p++) html+='<button type="button" class="chip" data-p="'+p+'" data-s="0" data-tie="0" aria-pressed="false"><span class="o">'+ord(p)+'</span><span class="t"></span></button>';
+    for(var q=1;q<n;q++) links+='<button type="button" class="tl" data-l="'+q+'" aria-pressed="false" aria-label="'+ord(q)+' and '+ord(q+1)+' swimmers tied">'+q+'–'+(q+1)+'</button>';
+    card.innerHTML='<h2><span>Race '+(i+1)+": "+NAMES[i]+'</span><small></small></h2><div class="chips">'+html+'</div>'
+      +'<div class="scr"><span>Scratches</span><button type="button" class="step" data-d="-1" aria-label="Fewer scratches">−</button><b class="cnt">0</b><button type="button" class="step" data-d="1" aria-label="More scratches">+</button><button type="button" class="tiebtn" aria-pressed="false" aria-expanded="false">Tie</button><button type="button" class="none" aria-pressed="false">None of ours</button></div>'
+      +'<div class="ties" hidden><span>Tied places:</span>'+links+'</div>'
+      +'<button type="button" class="whole" aria-pressed="false">Scratch entire race</button>';
     card.addEventListener("click",function(e){
       var cb=e.target.closest(".whole");
       if(cb){
         off[i]=!off[i];
         // Scratching a race throws away what was entered for it, so its
         // points are gone for good; un-scratching starts the race blank.
-        if(off[i]){for(var z=0;z<st[i].length;z++) st[i][z]=0; sc[i]=0; none[i]=false}
+        if(off[i]){
+          for(var z=0;z<st[i].length;z++) st[i][z]=0;
+          for(var y=0;y<tl[i].length;y++) tl[i][y]=false;
+          sc[i]=0; none[i]=false; open[i]=false;
+        }
         render(); return;
       }
       if(off[i]) return;
@@ -271,19 +324,25 @@ td.lead{color:#ff8a98;font-weight:600}
       if(s){
         sc[i]=Math.max(0,Math.min(MAXF[t]-1,sc[i]+(+s.dataset.d)));
         var f=fld(i);
-        for(var q=f+1;q<=MAXF[t];q++) st[i][q-1]=0;
+        for(var a=f+1;a<=MAXF[t];a++) st[i][a-1]=0;
+        for(var b2=f;b2<MAXF[t];b2++) tl[i][b2-1]=false;
         render(); return;
       }
+      var tb=e.target.closest(".tiebtn");
+      if(tb){ if(!anyTie(i)) open[i]=!open[i]; render(); return; }
+      var lb=e.target.closest(".tl");
+      if(lb){ if(!lb.disabled){ var li=+lb.dataset.l-1; tl[i][li]=!tl[i][li]; } render(); return; }
       var nb=e.target.closest(".none");
       if(nb){
         none[i]=!none[i];
-        if(none[i]) for(var k=0;k<st[i].length;k++) if(st[i][k]===1||st[i][k]===2) st[i][k]=0;
+        if(none[i]) for(var k=0;k<st[i].length;k++) if(st[i][k]===1) st[i][k]=0;
         render(); return;
       }
       var b=e.target.closest(".chip"); if(!b||b.disabled) return;
-      var pi=+b.dataset.p-1, nx=(st[i][pi]+1)%4;
+      var pi=+b.dataset.p-1, cur=st[i][pi];
+      var nx=cur===0?1:cur===1?3:0;
       st[i][pi]=nx;
-      if(nx===1||nx===2) none[i]=false;
+      if(nx===1) none[i]=false;
       render();
     });
     wrap.appendChild(card);
@@ -351,6 +410,7 @@ td.lead{color:#ff8a98;font-weight:600}
   }
   // Places (within the swum field) in a given state: 1 Reading, 2 tie, 3 DQ
   function placesIn(i,v){var a=[]; if(!off[i]) for(var p=1;p<=fld(i);p++) if(st[i][p-1]===v) a.push(p); return a}
+  function tieGroups(i){return off[i]?[]:groups(i).filter(function(g){return g.length>1}).map(function(g){return g.join("-")})}
   function slug(s){return s.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")}
 
   var dlg=document.getElementById("dlg"), msg=document.getElementById("msg"), send=document.getElementById("send");
@@ -390,7 +450,7 @@ td.lead{color:#ff8a98;font-weight:600}
       races:TYPES.map(function(t,i){
         var r=pts(i);
         return {race:i+1,event:NAMES[i],type:t==="R"?"relay":t==="D"?"diving":"individual",
-          places:placesIn(i,1),ties:placesIn(i,2),dqs:placesIn(i,3),
+          places:placesIn(i,1),tieGroups:tieGroups(i),dqs:placesIn(i,3),
           scratches:sc[i],noneOfOurs:none[i],raceScratched:off[i],
           entered:!!r,us:r?r.us:0,them:r?r.them:0};
       })
@@ -452,6 +512,7 @@ td.lead{color:#ff8a98;font-weight:600}
     var parts=(x.places||[]).map(ord).concat((x.ties||[]).map(function(p){return ord(p)+" ½"}));
     var txt=parts.length?parts.join(", "):"none";
     var extra=[];
+    (x.tieGroups||[]).forEach(function(g){extra.push(g.split("-").map(function(p){return ord(+p)}).join("–")+" tied")});
     if(x.dqs&&x.dqs.length) extra.push(x.dqs.map(ord).join(", ")+" DQ");
     if(x.scratches) extra.push(x.scratches+" scr");
     return txt+(extra.length?" ("+extra.join("; ")+")":"");
