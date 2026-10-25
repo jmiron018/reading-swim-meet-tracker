@@ -50,14 +50,23 @@ main{max-width:560px;margin:0 auto;padding:12px 16px 24px}
 .race h2{margin:0 0 8px;font:700 1.15rem var(--display);letter-spacing:.04em;text-transform:uppercase;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .race h2 small{font:400 .85rem var(--body);letter-spacing:0;text-transform:none;color:var(--mute);text-align:right}
 .chips{display:flex;gap:8px;flex-wrap:wrap}
-.chip,.step,.none,.reset{min-height:44px;border-radius:8px;border:2px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-weight:600}
-.chip{flex:1 1 0;min-width:44px}
-.chip[aria-pressed="true"],.none[aria-pressed="true"]{background:var(--red);border-color:var(--red);color:var(--on-red)}
-.chip:focus-visible,.reset:focus-visible,.step:focus-visible,.none:focus-visible{outline:3px solid #fff;outline-offset:2px}
-.scr{display:flex;align-items:center;gap:10px;margin-top:8px;color:var(--mute);font-size:.9rem}
+.chip,.step,.none,.reset,.whole{min-height:44px;border-radius:8px;border:2px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-weight:600}
+.chip{flex:1 1 0;min-width:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0;line-height:1.1}
+.chip .t{font-size:.7rem;min-height:.8rem}
+.chip[data-s="1"]{background:var(--red);border-color:var(--red);color:var(--on-red)}
+.chip[data-s="2"]{background:linear-gradient(90deg,var(--red) 50%,#26262b 50%);border-color:var(--red);color:var(--on-red)}
+.chip[data-s="3"]{background:#000;border-style:dashed;border-color:var(--mute);color:var(--mute)}
+.chip[data-s="3"] .o{text-decoration:line-through}
+.none[aria-pressed="true"],.whole[aria-pressed="true"]{background:var(--red);border-color:var(--red);color:var(--on-red)}
+.chip:focus-visible,.reset:focus-visible,.step:focus-visible,.none:focus-visible,.whole:focus-visible{outline:3px solid #fff;outline-offset:2px}
+.scr{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:8px;color:var(--mute);font-size:.9rem}
 .scr b{min-width:1.5ch;text-align:center;color:var(--ink);font-size:1rem}
 .step{min-width:44px;font-size:1.2rem}
-.step:disabled,.chip:disabled{opacity:.35}
+.step:disabled,.chip:disabled,.none:disabled{opacity:.35}
+.whole{width:100%;margin-top:8px;padding:0 14px}
+.race.off .chips,.race.off .scr{opacity:.4}
+.warn{margin-top:6px;font-size:.85rem;color:#ffb4bd}
+.warn:empty{display:none}
 .none{margin-left:auto;padding:0 14px}
 .reset{padding:0 16px;flex:none}
 .who{max-width:560px;margin:4px auto 0;text-align:center;font:700 1.1rem var(--display);letter-spacing:.06em;text-transform:uppercase}
@@ -129,7 +138,7 @@ td.lead{color:#ff8a98;font-weight:600}
     <label for="nameIn">Who's scoring on this phone?</label>
     <div class="row"><input id="nameIn" maxlength="40" autocomplete="given-name" placeholder="Your name" required><button class="go" type="submit">Save</button></div>
   </form>
-  <div class="tools"><span>Tap the places your team finished in. Use Scratches if a swimmer or relay didn't swim, or "None of ours" if no one from your team placed.</span><button class="reset" id="reset" type="button">Clear meet</button></div>
+  <div class="tools"><span>Tap a place once for Reading, again for a tie (½), again for a DQ, again to clear. After a DQ, everyone below moves up. Use Scratches if a swimmer or relay didn't swim, "None of ours" if no one from Reading placed, or "Scratch entire race" if the race wasn't held.</span><button class="reset" id="reset" type="button">Clear meet</button></div>
   <div class="saved" id="saved" role="status" hidden></div>
   <div id="races"></div>
   <button class="go submit" id="openSubmit" type="button">Submit final results</button>
@@ -156,53 +165,91 @@ td.lead{color:#ff8a98;font-weight:600}
   var TYPES=["R","I","I","I","I","I","I","R","I","I","R","D"];
   var NAMES=["200 medley relay","200 free","200 IM","50 free","100 fly","100 free","500 free","200 free relay","100 back","100 breast","400 free relay","Diving"];
   var IND=[6,4,3,2,1,0], REL=[8,4,2], DIVE=[6,4,3];
-  var FULL=TYPES.reduce(function(a,t){return a+(t==="R"?14:t==="D"?13:16)},0);
+  var TABS={R:REL,I:IND,D:DIVE};
   var MAXF={R:3,I:6,D:3};
-  var KEY="reading-swim-meet-v1";
-  var sel=TYPES.map(function(){return []});
-  var sc=TYPES.map(function(){return 0});
-  var none=TYPES.map(function(){return false});
+  var FULL=TYPES.reduce(function(a,t){return a+(t==="R"?14:t==="D"?13:16)},0);
+  /* place states: 0 Them, 1 Reading, 2 tie (half to Reading), 3 DQ (place removed, others move up) */
+  var TAG=["","","½","DQ"];
+  var STATE_NAME=["Them","Reading","Tie, half to Reading","Disqualified"];
+  var KEY="reading-swim-meet-v2", OLD_KEY="reading-swim-meet-v1";
+  var st,sc,none,off;
+  function fresh(){
+    st=TYPES.map(function(t){var a=[];for(var p=0;p<MAXF[t];p++)a.push(0);return a});
+    sc=TYPES.map(function(){return 0});
+    none=TYPES.map(function(){return false});
+    off=TYPES.map(function(){return false});
+  }
+  fresh();
   // Restore the meet in progress so a refresh or locked phone doesn't wipe it.
+  // A sheet saved by the old version (Reading places only) carries over.
   try{
     var saved=JSON.parse(localStorage.getItem(KEY)||"null");
-    if(saved && saved.sel && saved.sel.length===TYPES.length){sel=saved.sel;sc=saved.sc;none=saved.none}
-  }catch(e){}
-  function save(){try{localStorage.setItem(KEY,JSON.stringify({sel:sel,sc:sc,none:none}))}catch(e){}}
+    if(saved && saved.st && saved.st.length===TYPES.length){st=saved.st;sc=saved.sc;none=saved.none;off=saved.off}
+    else{
+      var old=JSON.parse(localStorage.getItem(OLD_KEY)||"null");
+      if(old && old.sel && old.sel.length===TYPES.length){
+        old.sel.forEach(function(ps,i){ps.forEach(function(p){if(p>=1&&p<=MAXF[TYPES[i]]) st[i][p-1]=1})});
+        sc=old.sc;none=old.none;
+      }
+    }
+  }catch(e){fresh()}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify({st:st,sc:sc,none:none,off:off}));localStorage.removeItem(OLD_KEY)}catch(e){}}
   var tally={us:0,them:0,done:0};
-  function fld(i){return MAXF[TYPES[i]]-sc[i]}
   var wrap=document.getElementById("races");
+  function fmt(n){return n%1===0?String(n):n.toFixed(1)}
+  function fld(i){return MAXF[TYPES[i]]-sc[i]}
+  function ord(p){return p+(p===1?"st":p===2?"nd":p===3?"rd":"th")}
 
   function pts(i){
-    var t=TYPES[i], tab=t==="R"?REL:t==="D"?DIVE:IND, mine=sel[i];
-    if(!mine.length && !none[i]) return null;
-    var f=fld(i), tot=0, us=0;
-    for(var q=1;q<=f;q++) tot+=tab[q-1];
-    mine.forEach(function(p){us+=tab[p-1]});
-    return {us:us, them:tot-us};
+    if(off[i]) return {us:0,them:0};
+    var tab=TABS[TYPES[i]], s=st[i], f=fld(i), mine=false, rank=0, tot=0, us=0;
+    for(var p=1;p<=f;p++){
+      var v=s[p-1];
+      if(v===1||v===2) mine=true;
+      if(v===3) continue;
+      rank++;
+      var w=tab[rank-1]||0;
+      tot+=w;
+      if(v===1) us+=w; else if(v===2) us+=w/2;
+    }
+    if(!mine&&!none[i]) return null;
+    return {us:us,them:tot-us};
   }
 
   function render(){
     var U=0,T=0,done=0;
     TYPES.forEach(function(t,i){
-      var card=wrap.children[i], r=pts(i);
+      var card=wrap.children[i], r=pts(i), f=fld(i), halves=0;
       var out=card.querySelector("small");
-      if(r){U+=r.us;T+=r.them;done++;out.textContent="Reading "+r.us+", Them "+r.them}
+      if(off[i]) out.textContent="Scratched, 0 points";
+      else if(r) out.textContent="Reading "+fmt(r.us)+", Them "+fmt(r.them);
       else out.textContent="";
+      if(r){U+=r.us;T+=r.them;done++}
+      card.classList.toggle("off",off[i]);
       card.querySelectorAll(".chip").forEach(function(b){
-        b.setAttribute("aria-pressed",sel[i].indexOf(+b.dataset.p)>-1?"true":"false");
-        b.disabled=+b.dataset.p>fld(i);
+        var p=+b.dataset.p, v=st[i][p-1];
+        b.dataset.s=v;
+        b.setAttribute("aria-pressed",v===1||v===2?"true":"false");
+        b.setAttribute("aria-label",ord(p)+" place: "+STATE_NAME[v]);
+        b.querySelector(".t").textContent=TAG[v];
+        b.disabled=off[i]||p>f;
+        if(v===2&&p<=f) halves++;
       });
+      card.querySelector(".warn").textContent=(halves%2===1&&!off[i])?"A tie splits points between the two teams, so mark tied places in pairs (½).":"";
       card.querySelector(".none").setAttribute("aria-pressed",none[i]?"true":"false");
+      card.querySelector(".none").disabled=off[i];
       card.querySelector(".cnt").textContent=sc[i];
-      card.querySelector('[data-d="-1"]').disabled=sc[i]<=0;
-      card.querySelector('[data-d="1"]').disabled=sc[i]>=MAXF[t]-1;
+      card.querySelector('[data-d="-1"]').disabled=off[i]||sc[i]<=0;
+      card.querySelector('[data-d="1"]').disabled=off[i]||sc[i]>=MAXF[t]-1;
+      var c=card.querySelector(".whole");
+      if(c) c.setAttribute("aria-pressed",off[i]?"true":"false");
     });
-    document.getElementById("us").textContent=U;
-    document.getElementById("them").textContent=T;
+    document.getElementById("us").textContent=fmt(U);
+    document.getElementById("them").textContent=fmt(T);
     tally={us:U,them:T,done:done};
     var all=done===TYPES.length;
     document.getElementById("chk").textContent=
-      done+" of "+TYPES.length+" races entered"+(all?(U+T===FULL?". Total "+FULL+".":". Total "+(U+T)+" ("+(FULL-U-T)+" unclaimed due to scratches)."):"");
+      done+" of "+TYPES.length+" races entered"+(all?(U+T===FULL?". Total "+FULL+".":". Total "+fmt(U+T)+" ("+fmt(FULL-U-T)+" unclaimed from scratches or DQs)."):"");
     save();
   }
 
@@ -210,33 +257,38 @@ td.lead{color:#ff8a98;font-weight:600}
     var card=document.createElement("section");
     card.className="race"+(t==="R"?" relay":"");
     var n=MAXF[t], html="";
-    for(var p=1;p<=n;p++) html+='<button type="button" class="chip" data-p="'+p+'" aria-pressed="false">'+p+(p===1?"st":p===2?"nd":p===3?"rd":"th")+'</button>';
-    card.innerHTML='<h2><span>Race '+(i+1)+": "+NAMES[i]+'</span><small></small></h2><div class="chips">'+html+'</div><div class="scr"><span>Scratches</span><button type="button" class="step" data-d="-1" aria-label="Fewer scratches">−</button><b class="cnt">0</b><button type="button" class="step" data-d="1" aria-label="More scratches">+</button><button type="button" class="none" aria-pressed="false">None of ours</button></div>';
+    for(var p=1;p<=n;p++) html+='<button type="button" class="chip" data-p="'+p+'" data-s="0" aria-pressed="false"><span class="o">'+ord(p)+'</span><span class="t"></span></button>';
+    card.innerHTML='<h2><span>Race '+(i+1)+": "+NAMES[i]+'</span><small></small></h2><div class="chips">'+html+'</div><div class="warn"></div><div class="scr"><span>Scratches</span><button type="button" class="step" data-d="-1" aria-label="Fewer scratches">−</button><b class="cnt">0</b><button type="button" class="step" data-d="1" aria-label="More scratches">+</button><button type="button" class="none" aria-pressed="false">None of ours</button></div>'+'<button type="button" class="whole" aria-pressed="false">Scratch entire race</button>';
     card.addEventListener("click",function(e){
+      var cb=e.target.closest(".whole");
+      if(cb){
+        off[i]=!off[i];
+        render(); return;
+      }
+      if(off[i]) return;
       var s=e.target.closest(".step");
       if(s){
         sc[i]=Math.max(0,Math.min(MAXF[t]-1,sc[i]+(+s.dataset.d)));
         var f=fld(i);
-        sel[i]=sel[i].filter(function(p){return p<=f});
+        for(var q=f+1;q<=MAXF[t];q++) st[i][q-1]=0;
         render(); return;
       }
       var nb=e.target.closest(".none");
       if(nb){
         none[i]=!none[i];
-        if(none[i]) sel[i]=[];
+        if(none[i]) for(var k=0;k<st[i].length;k++) if(st[i][k]===1||st[i][k]===2) st[i][k]=0;
         render(); return;
       }
-      var b=e.target.closest(".chip"); if(!b) return;
-      var p=+b.dataset.p, k=sel[i].indexOf(p);
-      if(k>-1) sel[i].splice(k,1); else { sel[i].push(p); none[i]=false; }
+      var b=e.target.closest(".chip"); if(!b||b.disabled) return;
+      var pi=+b.dataset.p-1, nx=(st[i][pi]+1)%4;
+      st[i][pi]=nx;
+      if(nx===1||nx===2) none[i]=false;
       render();
     });
     wrap.appendChild(card);
   });
 
-  function clearMeet(){
-    sel=TYPES.map(function(){return []});sc=TYPES.map(function(){return 0});none=TYPES.map(function(){return false});render();
-  }
+  function clearMeet(){fresh();render()}
   document.getElementById("reset").addEventListener("click",function(){
     if(!confirm("Clear every race and start a new meet?")) return;
     clearMeet();
@@ -296,6 +348,8 @@ td.lead{color:#ff8a98;font-weight:600}
     var d=new Date();
     return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
   }
+  // Places (within the swum field) in a given state: 1 Reading, 2 tie, 3 DQ
+  function placesIn(i,v){var a=[]; if(!off[i]) for(var p=1;p<=fld(i);p++) if(st[i][p-1]===v) a.push(p); return a}
   function slug(s){return s.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")}
 
   var dlg=document.getElementById("dlg"), msg=document.getElementById("msg"), send=document.getElementById("send");
@@ -306,7 +360,7 @@ td.lead{color:#ff8a98;font-weight:600}
     var em=document.getElementById("em");
     if(!em.value){try{em.value=localStorage.getItem(EMAIL_KEY)||SCOREKEEPER}catch(e){em.value=SCOREKEEPER}}
     document.getElementById("pwd").value="";
-    document.getElementById("sum").textContent="Reading "+tally.us+", Them "+tally.them+" · "+tally.done+" of "+TYPES.length+" races entered"+(who?" · from "+who+"'s scores":"");
+    document.getElementById("sum").textContent="Reading "+fmt(tally.us)+", Them "+fmt(tally.them)+" · "+tally.done+" of "+TYPES.length+" races entered"+(who?" · from "+who+"'s scores":"");
     say(tally.done<TYPES.length?"Not every race is entered yet. Missing races will be saved as blank.":"");
     send.disabled=false;
     dlg.showModal();
@@ -335,7 +389,8 @@ td.lead{color:#ff8a98;font-weight:600}
       races:TYPES.map(function(t,i){
         var r=pts(i);
         return {race:i+1,event:NAMES[i],type:t==="R"?"relay":t==="D"?"diving":"individual",
-          places:sel[i].slice().sort(function(a,b){return a-b}),scratches:sc[i],noneOfOurs:none[i],
+          places:placesIn(i,1),ties:placesIn(i,2),dqs:placesIn(i,3),
+          scratches:sc[i],noneOfOurs:none[i],raceScratched:off[i],
           entered:!!r,us:r?r.us:0,them:r?r.them:0};
       })
     };
@@ -358,7 +413,7 @@ td.lead{color:#ff8a98;font-weight:600}
       clearMeet();
       document.getElementById("opp").value="";
       document.getElementById("mdate").value="";
-      showSaved("Saved: Reading "+record.us+", "+opp+" "+record.them+" on "+fmtDate(date)+". Scores cleared for the next meet.");
+      showSaved("Saved: Reading "+fmt(record.us)+", "+opp+" "+fmt(record.them)+" on "+fmtDate(date)+". Scores cleared for the next meet.");
       window.scrollTo(0,0);
     }).catch(function(err){
       var c=err&&err.code||"";
@@ -389,6 +444,16 @@ td.lead{color:#ff8a98;font-weight:600}
   function seasonOf(date){var y=+date.slice(0,4), m=+date.slice(5,7); var s=m>=8?y:y-1; return s+"–"+String(s+1).slice(2)}
   function fmtDate(date){var d=new Date(date+"T12:00:00"); return d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}
   function el(tag,cls,text){var e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e}
+  function placesText(x){
+    if(x.raceScratched) return "scratched";
+    if(!x.entered) return "—";
+    var parts=(x.places||[]).map(ord).concat((x.ties||[]).map(function(p){return ord(p)+" ½"}));
+    var txt=parts.length?parts.join(", "):"none";
+    var extra=[];
+    if(x.dqs&&x.dqs.length) extra.push(x.dqs.map(ord).join(", ")+" DQ");
+    if(x.scratches) extra.push(x.scratches+" scr");
+    return txt+(extra.length?" ("+extra.join("; ")+")":"");
+  }
   function result(m){return m.us>m.them?"W":m.us<m.them?"L":"T"}
 
   function loadResults(){
@@ -423,7 +488,7 @@ td.lead{color:#ff8a98;font-weight:600}
     var w=0,l=0,t=0,pf=0,pa=0;
     list.forEach(function(m){var r=result(m); r==="W"?w++:r==="L"?l++:t++; pf+=m.us; pa+=m.them});
     var rec=el("div","rec");
-    [[w+"–"+l+(t?"–"+t:""),"Record"+(t?" (W–L–T)":" (W–L)")],[pf,"Points for"],[pa,"Points against"]].forEach(function(x){
+    [[w+"–"+l+(t?"–"+t:""),"Record"+(t?" (W–L–T)":" (W–L)")],[fmt(pf),"Points for"],[fmt(pa),"Points against"]].forEach(function(x){
       var s=el("div","stat"); s.appendChild(el("b",null,x[0])); s.appendChild(el("span",null,x[1])); rec.appendChild(s);
     });
     rbody.appendChild(rec);
@@ -437,7 +502,7 @@ td.lead{color:#ff8a98;font-weight:600}
       var tx=el("span","mtxt"); tx.appendChild(el("b",null,"vs "+m.opponent));
       tx.appendChild(el("span",null,fmtDate(m.date)+(m.racesEntered<NAMES.length?" · "+m.racesEntered+" of "+NAMES.length+" races":"")));
       btn.appendChild(tx);
-      btn.appendChild(el("span","msc",m.us+"–"+m.them));
+      btn.appendChild(el("span","msc",fmt(m.us)+"–"+fmt(m.them)));
       var det=el("div","mdet"); det.hidden=true;
       var tb=el("table"), hr=el("tr");
       ["Race","Places","Reading",m.opponent].forEach(function(h){hr.appendChild(el("th",null,h))});
@@ -445,9 +510,9 @@ td.lead{color:#ff8a98;font-weight:600}
       (m.races||[]).forEach(function(x){
         var tr=el("tr");
         tr.appendChild(el("td",null,x.race+". "+x.event));
-        tr.appendChild(el("td",null,!x.entered?"—":x.noneOfOurs?"none":x.places.map(function(p){return p+(p===1?"st":p===2?"nd":p===3?"rd":"th")}).join(", ")+(x.scratches?" ("+x.scratches+" scr)":"")));
-        tr.appendChild(el("td",x.entered&&x.us>x.them?"lead":"",x.entered?x.us:"—"));
-        tr.appendChild(el("td",null,x.entered?x.them:"—"));
+        tr.appendChild(el("td",null,placesText(x)));
+        tr.appendChild(el("td",x.entered&&x.us>x.them?"lead":"",x.entered?fmt(x.us):"—"));
+        tr.appendChild(el("td",null,x.entered?fmt(x.them):"—"));
         tb.appendChild(tr);
       });
       det.appendChild(tb);

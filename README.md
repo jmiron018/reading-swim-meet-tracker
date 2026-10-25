@@ -1,6 +1,6 @@
 # Reading Swim Meet Tracker
 
-Phone-friendly dual-meet scorer. Tap the places your team finished in each race; the scoreboard totals both teams. Progress is saved on the device, so a refresh won't lose the meet.
+Phone-friendly dual-meet scorer. Tap a place once for Reading, again for a tie (½ points), again for a DQ (places below move up), again to clear. Any race can be scratched entirely (0 points). The scoreboard totals both teams. Progress is saved on the device, so a refresh won't lose the meet.
 
 Live: https://reading-swim-meet-tracker.web.app
 
