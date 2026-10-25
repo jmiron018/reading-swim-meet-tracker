@@ -1,6 +1,6 @@
 # Reading Swim Meet Tracker
 
-Phone-friendly dual-meet scorer. Tap a place once for Reading, again for a DQ (places below move up), again to clear. **Tie** opens links (1–2, 2–3, ...) that join tied neighbours; tied swimmers share the points for all the places they take up (a tie for 2nd splits 2nd + 3rd). Any race can be scratched entirely (0 points, its entries cleared). The scoreboard totals both teams. Progress is saved on the device, so a refresh won't lose the meet.
+Phone-friendly dual-meet scorer. Tap a place once for Reading, again for a DQ (places below move up), again to clear. **Tie** opens links (1–2, 2–3, ...) that join tied neighbours; tied swimmers share the points for all the places they take up (a tie for 2nd splits 2nd + 3rd). Any race can be scratched entirely once something is recorded for it (0 points, its entries cleared). The scoreboard totals both teams. Progress is saved on the device, so a refresh won't lose the meet.
 
 Live: https://reading-swim-meet-tracker.web.app
 
