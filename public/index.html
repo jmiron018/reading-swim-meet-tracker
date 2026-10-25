@@ -263,6 +263,9 @@ td.lead{color:#ff8a98;font-weight:600}
       var cb=e.target.closest(".whole");
       if(cb){
         off[i]=!off[i];
+        // Scratching a race throws away what was entered for it, so its
+        // points are gone for good; un-scratching starts the race blank.
+        if(off[i]){for(var z=0;z<st[i].length;z++) st[i][z]=0; sc[i]=0; none[i]=false}
         render(); return;
       }
       if(off[i]) return;
