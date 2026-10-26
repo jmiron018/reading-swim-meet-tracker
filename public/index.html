@@ -140,6 +140,7 @@ td.lead{color:#ff8a98;font-weight:600}
 <div id="scoreView" role="tabpanel" aria-labelledby="tabScore">
   <form class="name" id="nameForm" hidden>
     <label for="nameIn">Who's scoring on this phone?</label>
+    <p class="note" style="margin:0 0 8px">Your name is listed on the Results tab while you score. Your scores stay on this phone.</p>
     <div class="row"><input id="nameIn" maxlength="40" autocomplete="given-name" placeholder="Your name" required><button class="go" type="submit">Save</button></div>
   </form>
   <div class="tools"><span>Tap a place once for Reading, again for a DQ (everyone below moves up), again to clear. Tap Tie on a race to mark tied places: tied swimmers share the points for the places they take up. Use Scratches if a swimmer or relay didn't swim, "None of ours" if no one from Reading placed, or "Scratch entire race" if the race wasn't held.</span><button class="reset" id="reset" type="button">Clear meet</button></div>
@@ -150,6 +151,7 @@ td.lead{color:#ff8a98;font-weight:600}
 <section id="resultsView" role="tabpanel" aria-labelledby="tabResults" hidden>
   <div class="rhead"><span class="note" id="rstatus">Loading results…</span><select id="season" aria-label="Season" hidden></select></div>
   <div id="rbody"></div>
+  <div id="usage"></div>
 </section>
 </main>
 <dialog class="dlg" id="dlg">
@@ -373,6 +375,7 @@ td.lead{color:#ff8a98;font-weight:600}
     var v=nameIn.value.trim(); if(!v) return;
     who=v; try{localStorage.setItem(NAME_KEY,who)}catch(e){}
     showName();
+    checkIn(true);
   });
   document.getElementById("rename").addEventListener("click",function(){
     who=""; nameIn.value=""; showName(); nameIn.focus();
@@ -501,7 +504,7 @@ td.lead{color:#ff8a98;font-weight:600}
     tabScore.setAttribute("aria-selected",results?"false":"true");
     tabResults.setAttribute("aria-selected",results?"true":"false");
     scoreView.hidden=results; resultsView.hidden=!results;
-    if(results) loadResults();
+    if(results){loadResults();loadUsage()}
   }
   tabScore.addEventListener("click",function(){showTab(false)});
   tabResults.addEventListener("click",function(){showTab(true)});
@@ -633,6 +636,53 @@ td.lead{color:#ff8a98;font-weight:600}
       ptrReset();
     });
     document.addEventListener("touchcancel",ptrReset);
+  }
+
+  // Usage counter: each phone that opens the scoring page checks in under a
+  // random ID with the scorer's name and when it was first and last seen.
+  // Only this tiny record is sent; scores never leave the phone until Submit.
+  var DEVICE_KEY="reading-swim-meet-device", lastCheckIn=0;
+  function deviceId(){
+    var id=""; try{id=localStorage.getItem(DEVICE_KEY)||""}catch(e){}
+    if(!/^[A-Za-z0-9]{20}$/.test(id)){
+      var c="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", a=new Uint32Array(20);
+      (window.crypto||{getRandomValues:function(x){for(var k=0;k<x.length;k++)x[k]=Math.random()*4294967296;return x}}).getRandomValues(a);
+      id=""; for(var k=0;k<20;k++) id+=c[a[k]%62];
+      try{localStorage.setItem(DEVICE_KEY,id);localStorage.removeItem(DEVICE_KEY+"-on")}catch(e){}
+    }
+    return id;
+  }
+  function checkIn(force){
+    var now=Date.now();
+    if(!force&&now-lastCheckIn<30*60*1000) return;   // at most every 30 min while open
+    lastCheckIn=now;
+    var id=deviceId(), known=false;
+    try{known=localStorage.getItem(DEVICE_KEY+"-on")==="1"}catch(e){}
+    firebaseApp().then(function(){
+      var ts=firebase.firestore.FieldValue.serverTimestamp(), ref=firebase.firestore().collection("devices").doc(id);
+      return known?ref.update({name:who||"",lastSeen:ts}):ref.set({name:who||"",firstSeen:ts,lastSeen:ts});
+    }).then(function(){try{localStorage.setItem(DEVICE_KEY+"-on","1")}catch(e){}})
+      .catch(function(){lastCheckIn=0});   // never gets in the way of scoring; retried next time
+  }
+  checkIn(true);
+  document.addEventListener("visibilitychange",function(){if(!document.hidden) checkIn(false)});
+
+  var usage=document.getElementById("usage");
+  function loadUsage(){
+    firebaseApp().then(function(){return firebase.firestore().collection("devices").get()}).then(function(snap){
+      var week=Date.now()-7*24*3600*1000, all=0, recent=[], names=[];
+      snap.docs.forEach(function(d){
+        var x=d.data(), seen=x.lastSeen&&x.lastSeen.toMillis?x.lastSeen.toMillis():0;
+        all++;
+        if(seen>=week){recent.push({name:(x.name||"").trim(),seen:seen})}
+      });
+      recent.sort(function(a,b){return b.seen-a.seen});
+      recent.forEach(function(x){if(x.name&&names.indexOf(x.name)<0) names.push(x.name)});
+      usage.innerHTML="";
+      usage.appendChild(el("h2","rsec","Scorers"));
+      usage.appendChild(el("p",null,"Used on "+all+" phone"+(all===1?"":"s")+" · "+recent.length+" this week"));
+      usage.appendChild(el("p","note",names.length?"Scoring this week: "+names.join(", "):"No named scorers this week."));
+    }).catch(function(){usage.innerHTML=""});
   }
 
   render();

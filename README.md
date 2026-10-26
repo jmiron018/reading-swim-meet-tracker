@@ -17,6 +17,10 @@ One-time setup:
 
 A **Results** tab (open to everyone) reads `meets` and shows the season record (W–L, points for/against), each meet with a tap-to-open race-by-race breakdown, and average points per event. Seasons run Aug–Jul; a season picker appears once there is more than one.
 
+## Usage counter
+
+Each phone that opens the page checks in to `devices/{random id}` with only the scorer's name and first/last-seen times (scores never leave the phone until Submit). The Results tab shows how many phones have used it, how many this week, and who has scored this week. Rules let a phone create its own record and then only update its name and lastSeen.
+
 ## Final results
 
 Each phone keeps its own scores (saved on that device only), labeled with the scorer's name. **Submit final results** asks for the opponent, meet date and the scorekeeper password, then saves that phone's sheet to Firestore at `meets/{date}_{opponent}`. Re-submitting the same date + opponent replaces the record. After a successful submit the form closes and that phone's sheet is cleared for the next meet.

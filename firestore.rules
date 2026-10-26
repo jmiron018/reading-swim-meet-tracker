@@ -9,6 +9,27 @@ service cloud.firestore {
       allow delete: if isScorekeeper();
     }
 
+    // Usage counter: one record per phone (random ID), holding only the
+    // scorer's name and first/last-seen times. Anyone can read (shown on the
+    // Results tab); a phone can create its record and then only move lastSeen
+    // forward or change the name. No deletes.
+    match /devices/{id} {
+      allow read: if true;
+      allow create: if id.matches('^[A-Za-z0-9]{20}$')
+        && request.resource.data.keys().hasOnly(['name', 'firstSeen', 'lastSeen'])
+        && validName(request.resource.data.name)
+        && request.resource.data.firstSeen == request.time
+        && request.resource.data.lastSeen == request.time;
+      allow update: if request.resource.data.keys().hasOnly(['name', 'firstSeen', 'lastSeen'])
+        && validName(request.resource.data.name)
+        && request.resource.data.firstSeen == resource.data.firstSeen
+        && request.resource.data.lastSeen == request.time;
+    }
+
+    function validName(n) {
+      return n is string && n.size() <= 40;
+    }
+
     // Scorekeeper list: one document per allowed account, with the account's
     // email (lowercase) or UID as the document ID. Managed in the Firebase
     // console only.
