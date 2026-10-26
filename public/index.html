@@ -670,20 +670,22 @@ td.lead{color:#ff8a98;font-weight:600}
   document.addEventListener("visibilitychange",function(){if(!document.hidden) checkIn(false)});
 
   var usage=document.getElementById("usage");
+  // "Today" runs from midnight Eastern time, whatever time zone the phone is in.
+  var etDay=new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"});
   function loadUsage(){
     firebaseApp().then(function(){return firebase.firestore().collection("devices").get()}).then(function(snap){
-      var week=Date.now()-7*24*3600*1000, all=0, recent=[], names=[];
+      var today=etDay.format(new Date()), all=0, recent=[], names=[];
       snap.docs.forEach(function(d){
         var x=d.data(), seen=x.lastSeen&&x.lastSeen.toMillis?x.lastSeen.toMillis():0;
         all++;
-        if(seen>=week){recent.push({name:(x.name||"").trim(),seen:seen})}
+        if(seen&&etDay.format(new Date(seen))===today) recent.push({name:(x.name||"").trim(),seen:seen});
       });
       recent.sort(function(a,b){return b.seen-a.seen});
       recent.forEach(function(x){if(x.name&&names.indexOf(x.name)<0) names.push(x.name)});
       usage.innerHTML="";
-      usage.appendChild(el("h2","rsec","Scorers"));
-      usage.appendChild(el("p",null,"Used on "+all+" phone"+(all===1?"":"s")+" · "+recent.length+" this week"));
-      usage.appendChild(el("p","note",names.length?"Scoring this week: "+names.join(", "):"No named scorers this week."));
+      usage.appendChild(el("h2","rsec","Scorers today"));
+      usage.appendChild(el("p",null,recent.length+" phone"+(recent.length===1?"":"s")+" used today"));
+      usage.appendChild(el("p","note",(names.length?"Scoring today: "+names.join(", ")+". ":"")+"Resets at midnight ET · "+all+" phone"+(all===1?"":"s")+" all-time."));
     }).catch(function(){usage.innerHTML=""});
   }
 

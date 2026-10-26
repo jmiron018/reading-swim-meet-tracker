@@ -19,7 +19,7 @@ A **Results** tab (open to everyone) reads `meets` and shows the season record (
 
 ## Usage counter
 
-Each phone that opens the page checks in (on open, on name change, and every 5 minutes while on screen) to `devices/{random id}` with only the scorer's name and first/last-seen times (scores never leave the phone until Submit). The Results tab shows how many phones have used it, how many this week, and who has scored this week. Rules let a phone create its own record and then only update its name and lastSeen.
+Each phone that opens the page checks in (on open, on name change, and every 5 minutes while on screen) to `devices/{random id}` with only the scorer's name and first/last-seen times (scores never leave the phone until Submit). The Results tab shows how many phones have been used today and who is scoring today (resets at midnight Eastern), plus an all-time phone count. Rules let a phone create its own record and then only update its name and lastSeen.
 
 ## Final results
 
