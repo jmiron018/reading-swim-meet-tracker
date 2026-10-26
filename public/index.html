@@ -118,6 +118,12 @@ th:first-child,td:first-child{text-align:left}
 th{color:var(--mute);font-weight:600}
 td.lead{color:#ff8a98;font-weight:600}
 .note{color:var(--mute);font-size:.85rem}
+.alltime{margin-top:8px}
+.alltime summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:600}
+.alltime summary::-webkit-details-marker{display:none}
+.alltime summary::before{content:"▸";margin-right:8px;color:var(--mute)}
+.alltime[open] summary::before{content:"▾"}
+.alltime summary:focus-visible{outline:3px solid #fff;outline-offset:2px;border-radius:6px}
 .saved{background:#123821;border:2px solid #2f8f55;color:#d6f5e0;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-weight:600}
 .dlg .cancel{min-height:44px;border-radius:8px;border:2px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-weight:600;padding:0 16px}
 </style>
@@ -674,18 +680,40 @@ td.lead{color:#ff8a98;font-weight:600}
   var etDay=new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"});
   function loadUsage(){
     firebaseApp().then(function(){return firebase.firestore().collection("devices").get()}).then(function(snap){
-      var today=etDay.format(new Date()), all=0, recent=[], names=[];
+      var today=etDay.format(new Date()), all=0, recent=[], names=[], ever={};
       snap.docs.forEach(function(d){
-        var x=d.data(), seen=x.lastSeen&&x.lastSeen.toMillis?x.lastSeen.toMillis():0;
+        var x=d.data(), seen=x.lastSeen&&x.lastSeen.toMillis?x.lastSeen.toMillis():0, nm=(x.name||"").trim();
         all++;
-        if(seen&&etDay.format(new Date(seen))===today) recent.push({name:(x.name||"").trim(),seen:seen});
+        if(seen&&etDay.format(new Date(seen))===today) recent.push({name:nm,seen:seen});
+        // All-time: one line per name (a name on several phones shows once, with its latest use)
+        var key=nm.toLowerCase();
+        if(nm&&(!ever[key]||ever[key].seen<seen)) ever[key]={name:nm,seen:seen,phones:(ever[key]?ever[key].phones:0)};
+        if(nm) ever[key].phones++;
       });
       recent.sort(function(a,b){return b.seen-a.seen});
       recent.forEach(function(x){if(x.name&&names.indexOf(x.name)<0) names.push(x.name)});
       usage.innerHTML="";
       usage.appendChild(el("h2","rsec","Scorers today"));
       usage.appendChild(el("p",null,recent.length+" phone"+(recent.length===1?"":"s")+" used today"));
-      usage.appendChild(el("p","note",(names.length?"Scoring today: "+names.join(", ")+". ":"")+"Resets at midnight ET · "+all+" phone"+(all===1?"":"s")+" all-time."));
+      usage.appendChild(el("p","note",(names.length?"Scoring today: "+names.join(", ")+". ":"")+"Resets at midnight ET."));
+      // All-time scorers, most recent first, behind a tap so it doesn't take over the tab
+      var list=Object.keys(ever).map(function(k){return ever[k]}).sort(function(a,b){return b.seen-a.seen});
+      var det=el("details","alltime"), sum=el("summary",null,"All-time: "+all+" phone"+(all===1?"":"s")+", "+list.length+" named scorer"+(list.length===1?"":"s"));
+      det.appendChild(sum);
+      if(list.length){
+        var tb=el("table"), hr=el("tr");
+        ["Scorer","Last seen"].forEach(function(h){hr.appendChild(el("th",null,h))});
+        tb.appendChild(hr);
+        list.forEach(function(x){
+          var tr=el("tr");
+          tr.appendChild(el("td",null,x.name+(x.phones>1?" ("+x.phones+" phones)":"")));
+          tr.appendChild(el("td",null,x.seen?new Date(x.seen).toLocaleDateString(undefined,{timeZone:"America/New_York",month:"short",day:"numeric",year:"numeric"}):"—"));
+          tb.appendChild(tr);
+        });
+        det.appendChild(tb);
+      }
+      if(all>list.reduce(function(n,x){return n+x.phones},0)) det.appendChild(el("p","note","Phones where no name was entered are counted but not listed."));
+      usage.appendChild(det);
     }).catch(function(){usage.innerHTML=""});
   }
 
