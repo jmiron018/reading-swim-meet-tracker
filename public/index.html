@@ -641,7 +641,7 @@ td.lead{color:#ff8a98;font-weight:600}
   // Usage counter: each phone that opens the scoring page checks in under a
   // random ID with the scorer's name and when it was first and last seen.
   // Only this tiny record is sent; scores never leave the phone until Submit.
-  var DEVICE_KEY="reading-swim-meet-device", lastCheckIn=0;
+  var DEVICE_KEY="reading-swim-meet-device", lastCheckIn=0, CHECK_EVERY=5*60*1000;
   function deviceId(){
     var id=""; try{id=localStorage.getItem(DEVICE_KEY)||""}catch(e){}
     if(!/^[A-Za-z0-9]{20}$/.test(id)){
@@ -654,7 +654,7 @@ td.lead{color:#ff8a98;font-weight:600}
   }
   function checkIn(force){
     var now=Date.now();
-    if(!force&&now-lastCheckIn<30*60*1000) return;   // at most every 30 min while open
+    if(!force&&now-lastCheckIn<CHECK_EVERY) return;   // at most every 5 min
     lastCheckIn=now;
     var id=deviceId(), known=false;
     try{known=localStorage.getItem(DEVICE_KEY+"-on")==="1"}catch(e){}
@@ -665,6 +665,8 @@ td.lead{color:#ff8a98;font-weight:600}
       .catch(function(){lastCheckIn=0});   // never gets in the way of scoring; retried next time
   }
   checkIn(true);
+  // Every 5 minutes while the page is on screen, and on coming back to it.
+  setInterval(function(){if(!document.hidden) checkIn(false)},CHECK_EVERY);
   document.addEventListener("visibilitychange",function(){if(!document.hidden) checkIn(false)});
 
   var usage=document.getElementById("usage");
